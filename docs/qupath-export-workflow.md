@@ -26,11 +26,25 @@ The raw tile is the microscope image. The mask tile is a single-channel image:
 3. Draw a rectangular annotation around a manageable training area.
 4. Fully annotate every charcoal fragment inside that rectangle as `Charcoal`.
 5. Select the rectangular training-region annotation.
-6. Run `scripts/qupath/export_selected_region_tiles_and_masks.groovy` in QuPath's script editor.
+6. Run one of the QuPath export scripts in QuPath's script editor.
 
-The selected rectangle is the export area. You do not need to know the tile
-boundaries while annotating. You only need to fully annotate all charcoal inside
-the selected export rectangle.
+Use this script if you have one large selected rectangle and want QuPath to cut it
+into fixed-size tiles:
+
+```text
+scripts/qupath/export_selected_region_tiles_and_masks.groovy
+```
+
+Use this script if you have already drawn multiple red `Training Region` boxes
+and want each box exported as one tile:
+
+```text
+scripts/qupath/export_training_regions_as_tiles_and_masks.groovy
+```
+
+The selected rectangle or each `Training Region` box is the export area. You do
+not need to know tile boundaries while annotating. You only need to fully
+annotate all charcoal inside every exported region.
 
 ## Output Location
 
@@ -69,4 +83,3 @@ Check that:
   they really do not contain charcoal.
 - If the selected rectangle is huge, the script may export many tiles. Start
   small.
-
