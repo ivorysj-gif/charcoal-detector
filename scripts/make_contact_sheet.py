@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -31,10 +31,19 @@ def main() -> None:
 
     pairs = collect_pairs(args.image_dir, args.mask_dir)
     selected = prioritize_examples(pairs, args.limit)
-    rows = [
-        make_row(raw_path, mask_path, model, device, args.image_size, args.thumb_size)
-        for raw_path, mask_path in selected
-    ]
+    rows = []
+    for row_number, (raw_path, mask_path) in enumerate(selected, start=1):
+        rows.append(
+            make_row(
+                row_number,
+                raw_path,
+                mask_path,
+                model,
+                device,
+                args.image_size,
+                args.thumb_size,
+            )
+        )
 
     sheet = stack_rows(rows)
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -74,6 +83,7 @@ def mask_nonzero(mask_path: Path) -> bool:
 
 
 def make_row(
+    row_number: int,
     raw_path: Path,
     mask_path: Path,
     model: torch.nn.Module,
@@ -87,12 +97,13 @@ def make_row(
 
     raw_panel = panel(raw, "raw", thumb_size)
     truth_panel = panel(draw_overlay(raw, truth_mask, (60, 110, 255)), "truth", thumb_size)
-    pred_panel = panel(draw_overlay(raw, prediction_mask, (255, 80, 40)), "prediction", thumb_size)
+    pred_panel = panel(draw_overlay(raw, prediction_mask, (0, 255, 80)), "prediction", thumb_size)
 
     label_width = 260
     row = Image.new("RGB", (label_width + thumb_size * 3, thumb_size + 34), "white")
     draw = ImageDraw.Draw(row)
-    draw.text((8, 8), raw_path.stem[:42], fill=(0, 0, 0))
+    draw.text((8, 8), f"Row {row_number}", fill=(0, 0, 0))
+    draw.text((8, 30), raw_path.stem[:42], fill=(0, 0, 0))
     row.paste(raw_panel, (label_width, 0))
     row.paste(truth_panel, (label_width + thumb_size, 0))
     row.paste(pred_panel, (label_width + thumb_size * 2, 0))
@@ -123,7 +134,7 @@ def draw_overlay(
 ) -> Image.Image:
     overlay = image.convert("RGBA")
     tint = Image.new("RGBA", image.size, (*color, 0))
-    alpha = mask.point(lambda value: 120 if value else 0)
+    alpha = mask.point(lambda value: 150 if value else 0)
     tint.putalpha(alpha)
     overlay.alpha_composite(tint)
     return overlay.convert("RGB")
@@ -154,4 +165,3 @@ def stack_rows(rows: list[Image.Image]) -> Image.Image:
 
 if __name__ == "__main__":
     main()
-
