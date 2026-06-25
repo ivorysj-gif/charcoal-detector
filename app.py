@@ -10,6 +10,11 @@ import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
 
 try:
+    import openslide
+except ImportError:
+    openslide = None
+
+try:
     from streamlit_image_coordinates import streamlit_image_coordinates
 except ImportError:
     streamlit_image_coordinates = None
@@ -34,6 +39,48 @@ DEFAULT_MODEL_PATH = Path("models/charcoal_tiny_unet.pt")
 @st.cache_resource
 def load_cached_model(checkpoint_path: str):
     return load_model(checkpoint_path)
+
+
+@st.cache_resource
+def open_cached_slide(slide_path: str):
+    if openslide is None:
+        raise RuntimeError("OpenSlide is not installed.")
+    return openslide.OpenSlide(slide_path)
+
+
+def read_ndpi_tile(slide, tile: dict[str, int]) -> Image.Image:
+    return slide.read_region(
+        (tile["x"], tile["y"]),
+        0,
+        (tile["width"], tile["height"]),
+    ).convert("RGB")
+
+
+def slide_microns_per_pixel(slide) -> float | None:
+    if openslide is None:
+        return None
+    mpp_x = slide.properties.get(openslide.PROPERTY_NAME_MPP_X)
+    mpp_y = slide.properties.get(openslide.PROPERTY_NAME_MPP_Y)
+    try:
+        if mpp_x and mpp_y:
+            return (float(mpp_x) + float(mpp_y)) / 2
+        if mpp_x:
+            return float(mpp_x)
+        if mpp_y:
+            return float(mpp_y)
+    except ValueError:
+        return None
+    return None
+
+
+def sidebar_mpp_input(default_value: float = 0.0) -> float:
+    return st.number_input(
+        "Microns per pixel",
+        min_value=0.0,
+        value=float(default_value),
+        step=0.01,
+        format="%.4f",
+    )
 
 
 def draw_lycopodium_points(
@@ -324,21 +371,16 @@ with st.sidebar:
         st.caption("No trained model checkpoint found; using baseline mode.")
 
     model_threshold = st.slider("Model threshold", 0.05, 0.99, 0.85, 0.01)
-    model_image_size = st.select_slider("Model image size", [128, 256, 512], value=256)
+    model_image_size = st.select_slider("Model image size", [128, 256, 512, 1024], value=256)
     threshold = st.slider("Baseline darkness threshold", 0, 255, 95, 1)
     min_area = st.number_input("Minimum fragment area (px)", 1, 100000, 80, 10)
     max_area = st.number_input("Maximum fragment area (px)", 1, 10000000, 500000, 1000)
     closing_radius = st.slider("Boundary smoothing", 0, 15, 2, 1)
-    pixel_size = st.number_input(
-        "Microns per pixel",
-        min_value=0.0,
-        value=0.0,
-        step=0.01,
-        format="%.4f",
-    )
+    pixel_size = 0.0
     pixel_unit = "um"
 
     if workflow == "Slide tile review":
+        slide_source = st.radio("Slide source", ["Upload PNG/TIFF", "Local NDPI path"])
         st.header("Tile Sampling")
         tile_size = st.select_slider(
             "Tile size",
@@ -353,17 +395,53 @@ with st.sidebar:
         )
         sampling_method = st.radio("Sampling", ["Systematic grid", "Random"])
         random_seed = st.number_input("Random seed", 0, 999999, 13, 1)
+        if slide_source == "Upload PNG/TIFF":
+            pixel_size = sidebar_mpp_input()
+        else:
+            ndpi_path = st.text_input(
+                "NDPI path",
+                value="",
+                placeholder=r"C:\path\to\slide.ndpi",
+            )
+    else:
+        pixel_size = sidebar_mpp_input()
 
-uploaded = st.file_uploader(
-    "Upload a microscopy image",
-    type=["png", "jpg", "jpeg", "tif", "tiff", "bmp"],
-)
+if workflow == "Slide tile review" and slide_source == "Local NDPI path":
+    uploaded = None
+    slide_path = Path(ndpi_path.strip('" ')) if ndpi_path else None
+    if not slide_path:
+        st.info("Enter a local NDPI path to begin tile review.")
+        st.stop()
+    if not slide_path.exists():
+        st.error(f"NDPI path does not exist: {slide_path}")
+        st.stop()
+    if openslide is None:
+        st.error("OpenSlide is not installed in this Python environment.")
+        st.stop()
+    slide = open_cached_slide(str(slide_path))
+    slide_width, slide_height = slide.dimensions
+    metadata_mpp = slide_microns_per_pixel(slide)
+    with st.sidebar:
+        if metadata_mpp:
+            st.caption(f"Metadata microns per pixel: {metadata_mpp:.4f}")
+        pixel_size = sidebar_mpp_input(metadata_mpp or 0.0)
+    image = None
+    slide_id = slide_path.name
+else:
+    uploaded = st.file_uploader(
+        "Upload a microscopy image",
+        type=["png", "jpg", "jpeg", "tif", "tiff", "bmp"],
+    )
 
-if uploaded is None:
-    st.info("Upload an image to run charcoal detection.")
-    st.stop()
+    if uploaded is None:
+        st.info("Upload an image to run charcoal detection.")
+        st.stop()
 
-image = Image.open(uploaded).convert("RGB")
+    image = Image.open(uploaded).convert("RGB")
+    slide = None
+    slide_width, slide_height = image.size
+    slide_id = uploaded.name
+
 settings = DetectionSettings(
     darkness_threshold=threshold,
     min_area_px=int(min_area),
@@ -376,7 +454,7 @@ settings = DetectionSettings(
 )
 
 if workflow == "Slide tile review":
-    all_tiles = generate_tiles(image.width, image.height, int(tile_size))
+    all_tiles = generate_tiles(slide_width, slide_height, int(tile_size))
     selected_tiles = sample_tiles(
         all_tiles,
         int(review_percent),
@@ -384,7 +462,7 @@ if workflow == "Slide tile review":
         int(random_seed),
     )
     session_key = (
-        f"slide_{uploaded.name}_{image.width}x{image.height}_{tile_size}_"
+        f"slide_{slide_id}_{slide_width}x{slide_height}_{tile_size}_"
         f"{review_percent}_{sampling_method}_{random_seed}"
     )
     index_key = f"{session_key}_index"
@@ -395,6 +473,7 @@ if workflow == "Slide tile review":
         st.session_state[reviews_key] = {}
 
     st.caption(
+        f"{slide_id}: {slide_width} x {slide_height} px. "
         f"{len(all_tiles)} total tiles; {len(selected_tiles)} selected for review "
         f"({review_percent}%)."
     )
@@ -402,9 +481,12 @@ if workflow == "Slide tile review":
     current_index = min(st.session_state[index_key], len(selected_tiles) - 1)
     st.session_state[index_key] = current_index
     tile = selected_tiles[current_index]
-    tile_image = image.crop(
-        (tile["x"], tile["y"], tile["x"] + tile["width"], tile["y"] + tile["height"])
-    )
+    if slide is not None:
+        tile_image = read_ndpi_tile(slide, tile)
+    else:
+        tile_image = image.crop(
+            (tile["x"], tile["y"], tile["x"] + tile["width"], tile["y"] + tile["height"])
+        )
     result = detect_image(tile_image, mode, model_available, settings)
 
     left, right = st.columns([1.2, 1])
@@ -436,10 +518,10 @@ if workflow == "Slide tile review":
                 "fragment_rows": global_fragment_rows(
                     filtered_measurements,
                     tile,
-                    uploaded.name,
+                    slide_id,
                 ),
                 "tile_summary": tile_summary_row(
-                    image,
+                    tile_image,
                     tile,
                     filtered_measurements,
                     excluded_ids,
@@ -492,9 +574,9 @@ if workflow == "Slide tile review":
     total_charcoal_area_px = int(tile_table["charcoal_area_px"].sum()) if not tile_table.empty else 0
     total_lycopodium = int(tile_table["lycopodium_count"].sum()) if not tile_table.empty else 0
     summary = {
-        "slide_id": uploaded.name,
-        "image_width_px": image.width,
-        "image_height_px": image.height,
+        "slide_id": slide_id,
+        "image_width_px": slide_width,
+        "image_height_px": slide_height,
         "total_tiles": len(all_tiles),
         "selected_tiles": len(selected_tiles),
         "reviewed_tiles": len(tile_rows),
@@ -502,7 +584,7 @@ if workflow == "Slide tile review":
         "sampling_method": sampling_method,
         "tile_size_px": int(tile_size),
         "reviewed_area_px": total_reviewed_area_px,
-        "total_image_area_px": image.width * image.height,
+        "total_image_area_px": slide_width * slide_height,
         "charcoal_retained_count": len(fragment_rows),
         "charcoal_area_px": total_charcoal_area_px,
         "lycopodium_count": total_lycopodium,

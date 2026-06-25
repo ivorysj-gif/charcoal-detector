@@ -60,6 +60,8 @@ exports a CSV plus an annotated preview.
 ## Slide Tile Review
 
 For larger exported PNG/TIFF slide images, choose `Slide tile review`.
+The same workflow can also read local `.ndpi` files directly when OpenSlide is
+installed; choose `Local NDPI path` and paste the full path to the slide.
 
 The app will:
 
@@ -74,6 +76,10 @@ The app will:
 The default tile size is `4096 x 4096 px`. The exported values are raw counts and
 areas for reviewed tiles only; the app does not estimate concentration or
 extrapolate totals across the full slide.
+
+For NDPI review, tiles are read from OpenSlide level 0. If detection looks too
+coarse on large tiles, increase `Model image size` to `512` or `1024`, trading
+speed for detail.
 
 ## Recommended Annotation Workflow
 
