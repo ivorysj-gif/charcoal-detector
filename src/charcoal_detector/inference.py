@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 import torch
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 from skimage import measure, morphology
 
 
@@ -207,6 +207,9 @@ def _draw_annotations(
 ) -> Image.Image:
     annotated = image.convert("RGB").copy()
     draw = ImageDraw.Draw(annotated, "RGBA")
+    font = _annotation_font(image)
+    label_padding = max(4, min(image.size) // 250)
+    label_offset = font.size + label_padding * 2 if hasattr(font, "size") else 24
 
     for measurement in measurements:
         fragment_mask = labels == measurement.fragment_id
@@ -228,14 +231,14 @@ def _draw_annotations(
         )
         label = str(measurement.fragment_id)
         label_x = measurement.bbox_min_x
-        label_y = max(0, measurement.bbox_min_y - 16)
-        label_box = draw.textbbox((label_x, label_y), label)
+        label_y = max(0, measurement.bbox_min_y - label_offset)
+        label_box = draw.textbbox((label_x, label_y), label, font=font)
         draw.rectangle(
             [
-                label_box[0] - 3,
-                label_box[1] - 2,
-                label_box[2] + 3,
-                label_box[3] + 2,
+                label_box[0] - label_padding,
+                label_box[1] - label_padding,
+                label_box[2] + label_padding,
+                label_box[3] + label_padding,
             ],
             fill=(255, 255, 255, 210),
             outline=(255, 80, 40, 230),
@@ -243,7 +246,23 @@ def _draw_annotations(
         draw.text(
             (label_x, label_y),
             label,
+            font=font,
             fill=(255, 80, 40, 255),
         )
 
     return annotated
+
+
+def _annotation_font(image: Image.Image) -> ImageFont.ImageFont:
+    font_size = max(18, min(48, min(image.size) // 28))
+    for font_path in (
+        "C:/Windows/Fonts/arialbd.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+        "C:/Windows/Fonts/calibrib.ttf",
+        "C:/Windows/Fonts/calibri.ttf",
+    ):
+        try:
+            return ImageFont.truetype(font_path, font_size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
