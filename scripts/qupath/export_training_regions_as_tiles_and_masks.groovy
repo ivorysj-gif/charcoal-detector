@@ -72,8 +72,8 @@ trainingRegions.eachWithIndex { regionObject, index ->
     }
 
     String stem = String.format('%s_training_region_%04d_x%06d_y%06d', imageName, index + 1, x, y)
-    def rawRequest = RegionRequest.createInstance(server.getPath(), downsample, x, y, width, height)
-    def maskRequest = RegionRequest.createInstance(labelServer.getPath(), downsample, x, y, width, height)
+    def rawRequest = RegionRequest.createInstance(server.getPath(), downsample, roi)
+    def maskRequest = RegionRequest.createInstance(labelServer.getPath(), downsample, roi)
 
     writeImageRegion(server, rawRequest, buildFilePath(rawDir, stem + imageExtension))
     writeImageRegion(labelServer, maskRequest, buildFilePath(maskDir, stem + maskExtension))
@@ -85,4 +85,3 @@ print String.format(
         exported,
         outputRoot
 )
-
