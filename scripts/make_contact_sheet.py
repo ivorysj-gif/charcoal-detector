@@ -24,6 +24,7 @@ def main() -> None:
     parser.add_argument("--image-size", type=int, default=256)
     parser.add_argument("--thumb-size", type=int, default=256)
     parser.add_argument("--limit", type=int, default=24)
+    parser.add_argument("--threshold", type=float, default=0.75)
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -42,6 +43,7 @@ def main() -> None:
                 device,
                 args.image_size,
                 args.thumb_size,
+                args.threshold,
             )
         )
 
@@ -90,14 +92,19 @@ def make_row(
     device: torch.device,
     image_size: int,
     thumb_size: int,
+    threshold: float,
 ) -> Image.Image:
     raw = Image.open(raw_path).convert("RGB")
     truth_mask = Image.open(mask_path).convert("L")
-    prediction_mask = predict_mask(raw, model, device, image_size)
+    prediction_mask = predict_mask(raw, model, device, image_size, threshold)
 
     raw_panel = panel(raw, "raw", thumb_size)
     truth_panel = panel(draw_overlay(raw, truth_mask, (60, 110, 255)), "truth", thumb_size)
-    pred_panel = panel(draw_overlay(raw, prediction_mask, (0, 255, 80)), "prediction", thumb_size)
+    pred_panel = panel(
+        draw_overlay(raw, prediction_mask, (0, 255, 80)),
+        f"prediction p>={threshold:.2f}",
+        thumb_size,
+    )
 
     label_width = 260
     row = Image.new("RGB", (label_width + thumb_size * 3, thumb_size + 34), "white")
@@ -115,12 +122,15 @@ def predict_mask(
     model: torch.nn.Module,
     device: torch.device,
     image_size: int,
+    threshold: float,
 ) -> Image.Image:
     resized = image.resize((image_size, image_size), Image.Resampling.BILINEAR)
     array = np.asarray(resized).astype(np.float32) / 255.0
     tensor = torch.from_numpy(array).permute(2, 0, 1).unsqueeze(0).to(device)
     with torch.no_grad():
-        prediction = model(tensor)["out"].argmax(dim=1).squeeze(0).cpu().numpy()
+        logits = model(tensor)["out"]
+        charcoal_probability = logits.softmax(dim=1)[:, 1].squeeze(0).cpu().numpy()
+        prediction = charcoal_probability >= threshold
     return Image.fromarray((prediction.astype(np.uint8) * 255), mode="L").resize(
         image.size,
         Image.Resampling.NEAREST,

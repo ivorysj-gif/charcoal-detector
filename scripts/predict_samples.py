@@ -20,6 +20,7 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, default=Path("outputs/predictions"))
     parser.add_argument("--image-size", type=int, default=256)
     parser.add_argument("--limit", type=int, default=12)
+    parser.add_argument("--threshold", type=float, default=0.75)
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -34,7 +35,8 @@ def main() -> None:
 
         with torch.no_grad():
             logits = model(tensor)["out"]
-            prediction = logits.argmax(dim=1).squeeze(0).cpu().numpy().astype(np.uint8)
+            charcoal_probability = logits.softmax(dim=1)[:, 1].squeeze(0).cpu().numpy()
+            prediction = (charcoal_probability >= args.threshold).astype(np.uint8)
 
         mask = Image.fromarray(prediction * 255, mode="L").resize(
             original.size,
