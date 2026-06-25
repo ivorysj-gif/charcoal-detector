@@ -214,7 +214,7 @@ def _draw_annotations(
         for contour in contours:
             points = [(float(col), float(row)) for row, col in contour]
             if len(points) > 1:
-                draw.line(points, fill=(255, 80, 40, 230), width=2)
+                draw.line(points, fill=(255, 80, 40, 240), width=3)
 
         draw.rectangle(
             [
@@ -226,9 +226,23 @@ def _draw_annotations(
             outline=(255, 180, 0, 220),
             width=1,
         )
+        label = str(measurement.fragment_id)
+        label_x = measurement.bbox_min_x
+        label_y = max(0, measurement.bbox_min_y - 16)
+        label_box = draw.textbbox((label_x, label_y), label)
+        draw.rectangle(
+            [
+                label_box[0] - 3,
+                label_box[1] - 2,
+                label_box[2] + 3,
+                label_box[3] + 2,
+            ],
+            fill=(255, 255, 255, 210),
+            outline=(255, 80, 40, 230),
+        )
         draw.text(
-            (measurement.bbox_min_x, max(0, measurement.bbox_min_y - 12)),
-            str(measurement.fragment_id),
+            (label_x, label_y),
+            label,
             fill=(255, 80, 40, 255),
         )
 
