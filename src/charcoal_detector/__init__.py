@@ -1,0 +1,2 @@
+"""Charcoal detection prototype package."""
+

@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# Keep large or sensitive research data out of git by default.
+data/raw/*
+data/masks/*
+data/processed/*
+models/*
+outputs/*
+
+# Keep directory structure visible.
+!data/raw/.gitkeep
+!data/masks/.gitkeep
+!data/processed/.gitkeep
+!models/.gitkeep
+!outputs/.gitkeep
+

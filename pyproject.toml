@@ -1,0 +1,20 @@
+[project]
+name = "charcoal-detector"
+version = "0.1.0"
+description = "Prototype app and training pipeline for detecting charcoal fragments in microscopy images."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "Pillow>=10.3",
+  "scikit-image>=0.23",
+  "opencv-python-headless>=4.9",
+  "streamlit>=1.36",
+  "torch>=2.3",
+  "torchvision>=0.18",
+]
+
+[tool.ruff]
+line-length = 88
+
