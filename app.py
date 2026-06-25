@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
+
+try:
+    from streamlit_image_coordinates import streamlit_image_coordinates
+except ImportError:
+    streamlit_image_coordinates = None
 
 from src.charcoal_detector.inference import (
     DetectionSettings,
@@ -26,6 +31,58 @@ DEFAULT_MODEL_PATH = Path("models/charcoal_tiny_unet.pt")
 @st.cache_resource
 def load_cached_model(checkpoint_path: str):
     return load_model(checkpoint_path)
+
+
+def draw_lycopodium_points(
+    image: Image.Image,
+    points: list[dict[str, float]],
+) -> Image.Image:
+    annotated = image.convert("RGB").copy()
+    draw = ImageDraw.Draw(annotated, "RGBA")
+    font = review_font(annotated)
+    radius = max(8, min(annotated.size) // 80)
+
+    for index, point in enumerate(points, start=1):
+        x = int(point["x_norm"] * annotated.width)
+        y = int(point["y_norm"] * annotated.height)
+        draw.ellipse(
+            [x - radius, y - radius, x + radius, y + radius],
+            outline=(40, 220, 70, 255),
+            width=max(3, radius // 3),
+        )
+        label = f"L{index}"
+        box = draw.textbbox((x + radius + 4, y - radius), label, font=font)
+        draw.rectangle(
+            [box[0] - 4, box[1] - 3, box[2] + 4, box[3] + 3],
+            fill=(255, 255, 255, 220),
+            outline=(40, 220, 70, 255),
+        )
+        draw.text((x + radius + 4, y - radius), label, font=font, fill=(20, 150, 45, 255))
+
+    return annotated
+
+
+def review_font(image: Image.Image) -> ImageFont.ImageFont:
+    font_size = max(16, min(34, min(image.size) // 32))
+    for font_path in (
+        "C:/Windows/Fonts/arialbd.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+        "C:/Windows/Fonts/calibrib.ttf",
+        "C:/Windows/Fonts/calibri.ttf",
+    ):
+        try:
+            return ImageFont.truetype(font_path, font_size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
+
+
+def resize_for_click_review(image: Image.Image, max_width: int = 950) -> Image.Image:
+    if image.width <= max_width:
+        return image
+    scale = max_width / image.width
+    return image.resize((max_width, int(image.height * scale)), Image.Resampling.BILINEAR)
+
 
 with st.sidebar:
     st.header("Detection")
@@ -147,19 +204,88 @@ with right:
             st.warning("No fragments detected with the current settings.")
 
 annotated_image = annotate_measurements(image, result.mask, filtered_measurements)
+image_session_key = f"{uploaded.name}_{image.width}x{image.height}"
+points_key = f"lycopodium_points_{image_session_key}"
+last_click_key = f"last_lycopodium_click_{image_session_key}"
+if points_key not in st.session_state:
+    st.session_state[points_key] = []
 
 with left:
     st.subheader("Annotated Image")
-    st.image(annotated_image, use_container_width=True)
+    if streamlit_image_coordinates is not None:
+        lycopodium_image = draw_lycopodium_points(
+            annotated_image,
+            st.session_state[points_key],
+        )
+        click_image = resize_for_click_review(lycopodium_image)
+        clicked = streamlit_image_coordinates(
+            click_image,
+            key=f"lycopodium_click_{image_session_key}",
+        )
+        if clicked is not None:
+            click_signature = (clicked["x"], clicked["y"])
+            if st.session_state.get(last_click_key) != click_signature:
+                st.session_state[last_click_key] = click_signature
+                st.session_state[points_key].append(
+                    {
+                        "x_norm": clicked["x"] / click_image.width,
+                        "y_norm": clicked["y"] / click_image.height,
+                    }
+                )
+                st.rerun()
+    else:
+        lycopodium_image = annotated_image
+        st.image(lycopodium_image, use_container_width=True)
+
+    review_columns = st.columns(3)
+    review_columns[0].metric("Lycopodium", len(st.session_state[points_key]))
+    if review_columns[1].button("Undo Lycopodium", disabled=not st.session_state[points_key]):
+        st.session_state[points_key].pop()
+        st.rerun()
+    if review_columns[2].button("Clear Lycopodium", disabled=not st.session_state[points_key]):
+        st.session_state[points_key] = []
+        st.session_state.pop(last_click_key, None)
+        st.rerun()
+
+    if streamlit_image_coordinates is None:
+        manual_lycopodium_count = st.number_input(
+            "Manual Lycopodium count",
+            min_value=0,
+            value=len(st.session_state[points_key]),
+            step=1,
+        )
+        st.session_state[points_key] = [
+            {"x_norm": 0.0, "y_norm": 0.0}
+            for _ in range(int(manual_lycopodium_count))
+        ]
+
     if result.probability_map is not None:
         st.subheader("Model Probability")
         st.image(result.probability_map, clamp=True, use_container_width=True)
 
 buffer = BytesIO()
-annotated_image.save(buffer, format="PNG")
+download_image = draw_lycopodium_points(annotated_image, st.session_state[points_key])
+download_image.save(buffer, format="PNG")
 st.download_button(
     "Download annotated image",
     buffer.getvalue(),
     file_name="charcoal_annotated.png",
     mime="image/png",
+)
+
+summary_table = pd.DataFrame(
+    [
+        {
+            "charcoal_retained_count": len(filtered_measurements),
+            "charcoal_excluded_count": len(excluded_ids),
+            "lycopodium_count": len(st.session_state[points_key]),
+            "microns_per_pixel": float(pixel_size) if pixel_size else None,
+        }
+    ]
+)
+st.download_button(
+    "Download summary CSV",
+    summary_table.to_csv(index=False).encode("utf-8"),
+    file_name="charcoal_summary.csv",
+    mime="text/csv",
 )
