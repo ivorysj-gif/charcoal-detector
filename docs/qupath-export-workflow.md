@@ -83,3 +83,18 @@ Check that:
   they really do not contain charcoal.
 - If the selected rectangle is huge, the script may export many tiles. Start
   small.
+
+## Preparing Exports For Training
+
+After exporting several images, validate and stage the dataset with:
+
+```powershell
+python scripts/prepare_qupath_dataset.py "C:\path\to\charcoal_detector_export"
+```
+
+If the summary looks correct, copy the validated pairs into `data/raw` and
+`data/masks` with:
+
+```powershell
+python scripts/prepare_qupath_dataset.py "C:\path\to\charcoal_detector_export" --copy
+```
