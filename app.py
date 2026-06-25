@@ -9,6 +9,7 @@ from PIL import Image
 
 from src.charcoal_detector.inference import (
     DetectionSettings,
+    annotate_measurements,
     detect_charcoal,
     detect_charcoal_with_model,
 )
@@ -75,20 +76,50 @@ if mode == "Trained model" and model_available:
 else:
     result = detect_charcoal(image, settings)
 
+excluded_ids: list[int] = []
+if result.measurements:
+    measurement_options = {
+        (
+            f"{measurement.fragment_id}: "
+            f"{measurement.area_px} px, "
+            f"({measurement.centroid_x:.0f}, {measurement.centroid_y:.0f})"
+        ): measurement.fragment_id
+        for measurement in result.measurements
+    }
+    with st.sidebar:
+        st.header("Review")
+        excluded_labels = st.multiselect(
+            "Exclude fragments",
+            options=list(measurement_options),
+            help="Excluded fragments are removed from the overlay, table, and CSV export.",
+        )
+    excluded_ids = [measurement_options[label] for label in excluded_labels]
+
+filtered_measurements = [
+    measurement
+    for measurement in result.measurements
+    if measurement.fragment_id not in set(excluded_ids)
+]
+annotated_image = annotate_measurements(image, result.mask, filtered_measurements)
+
 left, right = st.columns([1.2, 1])
 
 with left:
     st.subheader("Annotated Image")
-    st.image(result.annotated_image, use_container_width=True)
+    st.image(annotated_image, use_container_width=True)
     if result.probability_map is not None:
         st.subheader("Model Probability")
         st.image(result.probability_map, clamp=True, use_container_width=True)
 
 with right:
     st.subheader("Measurements")
-    st.metric("Detected fragments", len(result.measurements))
-    if result.measurements:
-        table = pd.DataFrame([m.as_dict() for m in result.measurements])
+    count_columns = st.columns(3)
+    count_columns[0].metric("Detected", len(result.measurements))
+    count_columns[1].metric("Excluded", len(excluded_ids))
+    count_columns[2].metric("Retained", len(filtered_measurements))
+
+    if filtered_measurements:
+        table = pd.DataFrame([m.as_dict() for m in filtered_measurements])
         st.dataframe(table, use_container_width=True, hide_index=True)
 
         csv = table.to_csv(index=False).encode("utf-8")
@@ -99,10 +130,13 @@ with right:
             mime="text/csv",
         )
     else:
-        st.warning("No fragments detected with the current settings.")
+        if result.measurements:
+            st.warning("All detected fragments are currently excluded.")
+        else:
+            st.warning("No fragments detected with the current settings.")
 
 buffer = BytesIO()
-result.annotated_image.save(buffer, format="PNG")
+annotated_image.save(buffer, format="PNG")
 st.download_button(
     "Download annotated image",
     buffer.getvalue(),

@@ -87,6 +87,20 @@ def detect_charcoal_with_model(
     return _result_from_mask(image, mask, settings, probability_map=probability_map)
 
 
+def annotate_measurements(
+    image: Image.Image,
+    mask: np.ndarray,
+    measurements: list[FragmentMeasurement],
+) -> Image.Image:
+    labels = measure.label(mask)
+    included_ids = {measurement.fragment_id for measurement in measurements}
+    if included_ids:
+        labels = np.where(np.isin(labels, list(included_ids)), labels, 0)
+    else:
+        labels = np.zeros_like(labels)
+    return _draw_annotations(image, labels, measurements)
+
+
 def _result_from_mask(
     image: Image.Image,
     mask: np.ndarray,
