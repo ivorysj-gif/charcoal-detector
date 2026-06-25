@@ -12,22 +12,30 @@ from torchvision.transforms import v2
 
 from .models import build_segmentation_model
 
+SUPPORTED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
+
 
 @dataclass(frozen=True)
 class TrainingConfig:
     image_dir: Path = Path("data/raw")
     mask_dir: Path = Path("data/masks")
-    output_path: Path = Path("models/charcoal_fcn.pt")
+    output_path: Path = Path("models/charcoal_tiny_unet.pt")
     epochs: int = 20
     batch_size: int = 2
     learning_rate: float = 1e-4
     validation_fraction: float = 0.2
+    image_size: int = 512
 
 
 class CharcoalMaskDataset(Dataset):
-    def __init__(self, image_dir: Path, mask_dir: Path) -> None:
-        self.image_paths = sorted(image_dir.glob("*"))
+    def __init__(self, image_dir: Path, mask_dir: Path, image_size: int) -> None:
+        self.image_paths = sorted(
+            path
+            for path in image_dir.iterdir()
+            if path.is_file() and path.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS
+        )
         self.mask_dir = mask_dir
+        self.image_size = image_size
         self.transforms = v2.Compose(
             [
                 v2.ToImage(),
@@ -41,18 +49,25 @@ class CharcoalMaskDataset(Dataset):
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
         image_path = self.image_paths[index]
         mask_path = self.mask_dir / f"{image_path.stem}.png"
-        image = Image.open(image_path).convert("RGB")
-        mask = Image.open(mask_path).convert("L")
+        image = Image.open(image_path).convert("RGB").resize(
+            (self.image_size, self.image_size),
+            Image.Resampling.BILINEAR,
+        )
+        mask = Image.open(mask_path).convert("L").resize(
+            (self.image_size, self.image_size),
+            Image.Resampling.NEAREST,
+        )
 
         image_tensor = self.transforms(image)
-        mask_tensor = torch.from_numpy(np.asarray(mask))
+        mask_tensor = torch.from_numpy(np.asarray(mask).copy())
         mask_tensor = (mask_tensor > 0).long()
         return image_tensor, mask_tensor
 
 
 def train(config: TrainingConfig) -> Path:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dataset = CharcoalMaskDataset(config.image_dir, config.mask_dir)
+    print(f"Training on {device}")
+    dataset = CharcoalMaskDataset(config.image_dir, config.mask_dir, config.image_size)
 
     if len(dataset) < 2:
         raise ValueError("Add at least two image/mask pairs before training.")
