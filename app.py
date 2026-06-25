@@ -1,21 +1,47 @@
 from __future__ import annotations
 
 from io import BytesIO
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 from PIL import Image
 
-from src.charcoal_detector.inference import DetectionSettings, detect_charcoal
+from src.charcoal_detector.inference import (
+    DetectionSettings,
+    detect_charcoal,
+    detect_charcoal_with_model,
+)
+from src.charcoal_detector.models import load_model
 
 
 st.set_page_config(page_title="Charcoal Detector", layout="wide")
 
 st.title("Charcoal Detector")
 
+DEFAULT_MODEL_PATH = Path("models/charcoal_tiny_unet.pt")
+
+
+@st.cache_resource
+def load_cached_model(checkpoint_path: str):
+    return load_model(checkpoint_path)
+
 with st.sidebar:
     st.header("Detection")
-    threshold = st.slider("Darkness threshold", 0, 255, 95, 1)
+    model_available = DEFAULT_MODEL_PATH.exists()
+    default_mode_index = 0 if model_available else 1
+    mode = st.radio(
+        "Mode",
+        ["Trained model", "Dark-particle baseline"],
+        index=default_mode_index,
+        disabled=not model_available,
+    )
+    if not model_available:
+        st.caption("No trained model checkpoint found; using baseline mode.")
+
+    model_threshold = st.slider("Model threshold", 0.05, 0.99, 0.85, 0.01)
+    model_image_size = st.select_slider("Model image size", [128, 256, 512], value=256)
+    threshold = st.slider("Baseline darkness threshold", 0, 255, 95, 1)
     min_area = st.number_input("Minimum fragment area (px)", 1, 100000, 80, 10)
     max_area = st.number_input("Maximum fragment area (px)", 1, 10000000, 500000, 1000)
     closing_radius = st.slider("Boundary smoothing", 0, 15, 2, 1)
@@ -39,15 +65,24 @@ settings = DetectionSettings(
     closing_radius=int(closing_radius),
     pixel_size=float(pixel_size) if pixel_size else None,
     pixel_unit=pixel_unit,
+    model_threshold=float(model_threshold),
+    model_image_size=int(model_image_size),
 )
 
-result = detect_charcoal(image, settings)
+if mode == "Trained model" and model_available:
+    model = load_cached_model(str(DEFAULT_MODEL_PATH))
+    result = detect_charcoal_with_model(image, model, settings)
+else:
+    result = detect_charcoal(image, settings)
 
 left, right = st.columns([1.2, 1])
 
 with left:
     st.subheader("Annotated Image")
     st.image(result.annotated_image, use_container_width=True)
+    if result.probability_map is not None:
+        st.subheader("Model Probability")
+        st.image(result.probability_map, clamp=True, use_container_width=True)
 
 with right:
     st.subheader("Measurements")
@@ -74,4 +109,3 @@ st.download_button(
     file_name="charcoal_annotated.png",
     mime="image/png",
 )
-

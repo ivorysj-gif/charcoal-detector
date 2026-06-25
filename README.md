@@ -48,10 +48,14 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-The baseline mode is intentionally simple. It segments dark particles, removes tiny
-specks, measures connected objects, and exports a CSV plus an annotated preview.
-It will not be scientifically reliable until trained on representative charcoal
-and non-charcoal examples.
+If `models/charcoal_tiny_unet.pt` exists, the app opens in trained-model mode.
+Use the model threshold slider to trade sensitivity against false positives.
+Higher thresholds are more conservative; for the first pilot model, `0.85` is a
+reasonable starting point.
+
+The app also includes a dark-particle baseline mode. It is intentionally simple:
+it segments dark particles, removes tiny specks, measures connected objects, and
+exports a CSV plus an annotated preview.
 
 ## Recommended Annotation Workflow
 
@@ -65,4 +69,3 @@ Use QuPath, CVAT, Label Studio, or napari to create binary masks for:
 
 The most important early metric is not raw accuracy on familiar images. It is
 whether the model generalizes to new slides and hard negatives.
-
