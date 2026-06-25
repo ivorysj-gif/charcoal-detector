@@ -35,30 +35,47 @@ class FragmentMeasurement:
     minor_axis_length_px: float
     perimeter_px: float
     area_calibrated: float | None = None
-    length_calibrated: float | None = None
+    major_axis_calibrated: float | None = None
+    minor_axis_calibrated: float | None = None
+    perimeter_calibrated: float | None = None
     unit: str = "px"
 
     def as_dict(self) -> dict[str, int | float | str | None]:
-        return {
+        row: dict[str, int | float | str | None] = {
             "fragment_id": self.fragment_id,
-            "area_px": self.area_px,
-            "centroid_x": round(self.centroid_x, 2),
-            "centroid_y": round(self.centroid_y, 2),
-            "bbox_min_x": self.bbox_min_x,
-            "bbox_min_y": self.bbox_min_y,
-            "bbox_max_x": self.bbox_max_x,
-            "bbox_max_y": self.bbox_max_y,
-            "major_axis_length_px": round(self.major_axis_length_px, 2),
-            "minor_axis_length_px": round(self.minor_axis_length_px, 2),
-            "perimeter_px": round(self.perimeter_px, 2),
-            "area_calibrated": None
-            if self.area_calibrated is None
-            else round(self.area_calibrated, 4),
-            "length_calibrated": None
-            if self.length_calibrated is None
-            else round(self.length_calibrated, 4),
-            "unit": self.unit,
         }
+        if self.unit != "px" and self.area_calibrated is not None:
+            row.update(
+                {
+                    f"area_{self.unit}2": round(float(self.area_calibrated), 4),
+                    f"major_axis_{self.unit}": round(
+                        float(self.major_axis_calibrated or 0), 4
+                    ),
+                    f"minor_axis_{self.unit}": round(
+                        float(self.minor_axis_calibrated or 0), 4
+                    ),
+                    f"perimeter_{self.unit}": round(
+                        float(self.perimeter_calibrated or 0), 4
+                    ),
+                }
+            )
+
+        row.update(
+            {
+                "area_px": self.area_px,
+                "major_axis_length_px": round(self.major_axis_length_px, 2),
+                "minor_axis_length_px": round(self.minor_axis_length_px, 2),
+                "perimeter_px": round(self.perimeter_px, 2),
+                "centroid_x": round(self.centroid_x, 2),
+                "centroid_y": round(self.centroid_y, 2),
+                "bbox_min_x": self.bbox_min_x,
+                "bbox_min_y": self.bbox_min_y,
+                "bbox_max_x": self.bbox_max_x,
+                "bbox_max_y": self.bbox_max_y,
+                "unit": self.unit,
+            }
+        )
+        return row
 
 
 @dataclass(frozen=True)
@@ -177,7 +194,9 @@ def _measure_fragments(
         major_axis_length = float(region.axis_major_length)
         minor_axis_length = float(region.axis_minor_length)
         area_calibrated = region.area * scale * scale if scale else None
-        length_calibrated = major_axis_length * scale if scale else None
+        major_axis_calibrated = major_axis_length * scale if scale else None
+        minor_axis_calibrated = minor_axis_length * scale if scale else None
+        perimeter_calibrated = region.perimeter * scale if scale else None
         measurements.append(
             FragmentMeasurement(
                 fragment_id=index,
@@ -192,7 +211,9 @@ def _measure_fragments(
                 minor_axis_length_px=minor_axis_length,
                 perimeter_px=float(region.perimeter),
                 area_calibrated=area_calibrated,
-                length_calibrated=length_calibrated,
+                major_axis_calibrated=major_axis_calibrated,
+                minor_axis_calibrated=minor_axis_calibrated,
+                perimeter_calibrated=perimeter_calibrated,
                 unit=unit,
             )
         )

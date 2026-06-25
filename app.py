@@ -46,8 +46,14 @@ with st.sidebar:
     min_area = st.number_input("Minimum fragment area (px)", 1, 100000, 80, 10)
     max_area = st.number_input("Maximum fragment area (px)", 1, 10000000, 500000, 1000)
     closing_radius = st.slider("Boundary smoothing", 0, 15, 2, 1)
-    pixel_size = st.number_input("Pixel size", min_value=0.0, value=0.0, step=0.1)
-    pixel_unit = st.selectbox("Pixel unit", ["px", "um", "mm"], index=0)
+    pixel_size = st.number_input(
+        "Microns per pixel",
+        min_value=0.0,
+        value=0.0,
+        step=0.01,
+        format="%.4f",
+    )
+    pixel_unit = "um"
 
 uploaded = st.file_uploader(
     "Upload a microscopy image",
