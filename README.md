@@ -57,6 +57,24 @@ The app also includes a dark-particle baseline mode. It is intentionally simple:
 it segments dark particles, removes tiny specks, measures connected objects, and
 exports a CSV plus an annotated preview.
 
+## Slide Tile Review
+
+For larger exported PNG/TIFF slide images, choose `Slide tile review`.
+
+The app will:
+
+- split the image into tiles
+- select a systematic or random subset for review
+- run the charcoal detector on the current tile
+- let the reviewer exclude false-positive charcoal fragments
+- let the reviewer click Lycopodium grains manually
+- save reviewed tile results
+- export per-fragment, per-tile, and slide-summary CSVs
+
+The default tile size is `4096 x 4096 px`. The exported values are raw counts and
+areas for reviewed tiles only; the app does not estimate concentration or
+extrapolate totals across the full slide.
+
 ## Recommended Annotation Workflow
 
 Use QuPath, CVAT, Label Studio, or napari to create binary masks for:
